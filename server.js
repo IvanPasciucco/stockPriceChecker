@@ -4,7 +4,7 @@ const express     = require('express');
 const bodyParser  = require('body-parser');
 const cors        = require('cors');
 const mongoose    = require('mongoose');
-const helmet      = require('helmet'); // <--- AQUI: Se importa AL PRINCIPIO
+const helmet      = require('helmet'); // Importar Helmet al principio
 
 const apiRoutes         = require('./routes/api.js');
 const fccTestingRoutes  = require('./routes/fcctesting.js');
@@ -12,7 +12,12 @@ const runner            = require('./test-runner');
 
 const app = express();
 
-// 1. Configuración de Seguridad (Helmet) - Debe ir al principio de los middleware
+// --- SEGURIDAD ---
+// 1. Ocultar "X-Powered-By: Express"
+app.use(helmet.hidePoweredBy());
+
+// 2. Configurar Content Security Policy (CSP)
+// FreeCodeCamp requiere que solo se permitan scripts/estilos propios ('self')
 app.use(helmet.contentSecurityPolicy({
   directives: {
     defaultSrc: ["'self'"],
@@ -20,40 +25,36 @@ app.use(helmet.contentSecurityPolicy({
     styleSrc: ["'self'"],
   }
 }));
-app.use(helmet.hidePoweredBy());
 
+// --- CONEXIÓN BASE DE DATOS ---
 mongoose.connect(process.env.DB)
   .then(() => console.log('Base de datos conectada exitosamente'))
   .catch((err) => console.log('Error de conexión a BD: ', err));
 
-// 3. Archivos estáticos y CORS
+// --- CONFIGURACIÓN ---
 app.use('/public', express.static(process.cwd() + '/public'));
-app.use(cors({origin: '*'})); //For FCC testing purposes only
+app.use(cors({origin: '*'})); // Requerido para los tests de FCC
 
-// 4. Parsers
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-//Index page (static HTML)
+// --- RUTAS ---
 app.route('/')
   .get(function (req, res) {
     res.sendFile(process.cwd() + '/views/index.html');
   });
 
-//For FCC testing purposes
 fccTestingRoutes(app);
-
-//Routing for API 
 apiRoutes(app);  
-    
-//404 Not Found Middleware
+
+// 404 Handler
 app.use(function(req, res, next) {
   res.status(404)
     .type('text')
     .send('Not Found');
 });
 
-//Start our server and tests!
+// Start Server
 const listener = app.listen(process.env.PORT || 3000, function () {
   console.log('Your app is listening on port ' + listener.address().port);
   if(process.env.NODE_ENV==='test') {
@@ -69,4 +70,4 @@ const listener = app.listen(process.env.PORT || 3000, function () {
   }
 });
 
-module.exports = app; //for testing
+module.exports = app;
