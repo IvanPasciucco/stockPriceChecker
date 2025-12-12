@@ -20,6 +20,7 @@ app.use(helmet.contentSecurityPolicy({
     styleSrc: ["'self'"],
   }
 }));
+app.use(helmet.hidePoweredBy());
 
 mongoose.connect(process.env.DB)
   .then(() => console.log('Base de datos conectada exitosamente'))
