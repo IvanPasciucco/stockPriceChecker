@@ -11,6 +11,8 @@ const runner            = require('./test-runner');
 
 const app = express();
 
+const helmet = require('helmet');
+
 mongoose.connect(process.env.DB, { useNewUrlParser: true, useUnifiedTopology: true })
   .then(() => console.log('Base de datos conectada exitosamente'))
   .catch((err) => console.log('Error de conexión a BD: ', err));
@@ -27,7 +29,6 @@ app.use(helmet.contentSecurityPolicy({
 
 app.use('/public', express.static(process.cwd() + '/public'));
 
-const helmet = require('helmet');
 
 // ... después de app.use('/public'...)
 
