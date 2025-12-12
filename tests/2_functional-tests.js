@@ -6,16 +6,20 @@ const server = require('../server');
 chai.use(chaiHttp);
 
 suite('Functional Tests', function() {
+  
+  // AUMENTAMOS EL TIMEOUT A 5 SEGUNDOS (5000ms)
+  // La API externa es lenta y a veces Mongoose también.
+  this.timeout(5000);
 
   let likesFirstStock = 0;
 
-  // 1. Ver un stock
   test('Viewing one stock: GET request to /api/stock-prices/', function(done) {
     chai.request(server)
       .get('/api/stock-prices')
       .query({ stock: 'GOOG' })
       .end(function(err, res) {
         assert.equal(res.status, 200);
+        assert.property(res.body, 'stockData');
         assert.property(res.body.stockData, 'stock');
         assert.property(res.body.stockData, 'price');
         assert.property(res.body.stockData, 'likes');
@@ -24,7 +28,6 @@ suite('Functional Tests', function() {
       });
   });
 
-  // 2. Ver un stock y dar like
   test('Viewing one stock and liking it: GET request to /api/stock-prices/', function(done) {
     chai.request(server)
       .get('/api/stock-prices')
@@ -33,12 +36,12 @@ suite('Functional Tests', function() {
         assert.equal(res.status, 200);
         assert.equal(res.body.stockData.stock, 'GOOG');
         assert.isNumber(res.body.stockData.likes);
-        likesFirstStock = res.body.stockData.likes; // Guardamos para comparar luego
+        assert.isTrue(res.body.stockData.likes > 0);
+        likesFirstStock = res.body.stockData.likes;
         done();
       });
   });
 
-  // 3. Ver el mismo stock y dar like de nuevo (no debe subir el contador)
   test('Viewing the same stock and liking it again: GET request to /api/stock-prices/', function(done) {
     chai.request(server)
       .get('/api/stock-prices')
@@ -46,13 +49,12 @@ suite('Functional Tests', function() {
       .end(function(err, res) {
         assert.equal(res.status, 200);
         assert.equal(res.body.stockData.stock, 'GOOG');
-        // El like no debería haber aumentado porque es la misma IP
+        // El like NO debe subir si es la misma IP
         assert.equal(res.body.stockData.likes, likesFirstStock); 
         done();
       });
   });
 
-  // 4. Ver dos stocks
   test('Viewing two stocks: GET request to /api/stock-prices/', function(done) {
     chai.request(server)
       .get('/api/stock-prices')
@@ -67,7 +69,6 @@ suite('Functional Tests', function() {
       });
   });
 
-  // 5. Ver dos stocks y dar like a ambos
   test('Viewing two stocks and liking them: GET request to /api/stock-prices/', function(done) {
     chai.request(server)
       .get('/api/stock-prices')
