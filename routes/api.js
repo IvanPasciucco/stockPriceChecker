@@ -1,10 +1,10 @@
 'use strict';
 
 const mongoose = require('mongoose');
-const axios = require('axios');
 const crypto = require('crypto');
 
-// Schema
+// 1. DEFINIR EL ESQUEMA Y MODELO (Database Schema)
+// Guardamos el símbolo y un array de IPs (hasheadas) que dieron like.
 const StockSchema = new mongoose.Schema({
   symbol: { type: String, required: true },
   likes: { type: [String], default: [] }
@@ -13,95 +13,91 @@ const Stock = mongoose.model('Stock', StockSchema);
 
 module.exports = function (app) {
 
-  // Hashear IP
-  const hashIP = (ip) => {
+  // Función auxiliar para hashear (anonimizar) la IP
+  function anonymizeIP(ip) {
     return crypto.createHash('sha256').update(ip).digest('hex');
   }
 
-  // Obtener precio
-  const getStockPrice = async (stockSymbol) => {
-    try {
-      const response = await axios.get(`https://stock-price-checker-proxy.freecodecamp.rocks/v1/stock/${stockSymbol}/quote`);
-      const { symbol, latestPrice } = response.data;
-      return { symbol, price: latestPrice };
-    } catch (error) {
-      console.log("Error API externa:", error.message);
-      return null;
-    }
-  };
+  // Función asíncrona para obtener el precio desde la API Proxy
+  async function getStockPrice(stockSymbol) {
+    const response = await fetch(`https://stock-price-checker-proxy.freecodecamp.rocks/v1/stock/${stockSymbol}/quote`);
+    const data = await response.json();
+    return data.latestPrice; // La API devuelve un objeto, solo queremos el precio
+  }
 
-  // Manejar Likes
-  const handleLike = async (symbol, like, ip) => {
-    const hashedIP = hashIP(ip);
-    let stockDoc = await Stock.findOne({ symbol: symbol });
-
-    if (!stockDoc) {
-      stockDoc = new Stock({ symbol: symbol, likes: [] });
-    }
-
-    if (like && !stockDoc.likes.includes(hashedIP)) {
-      stockDoc.likes.push(hashedIP);
-      await stockDoc.save();
-    }
+  // Función principal para procesar CADA stock
+  async function processStock(stockSymbol, like, ip) {
+    const symbol = stockSymbol.toUpperCase();
+    let price = await getStockPrice(symbol);
     
-    return stockDoc.likes.length;
-  };
+    // Buscar o crear el registro en la DB
+    let stockDoc = await Stock.findOne({ symbol: symbol });
+    if (!stockDoc) {
+      stockDoc = new Stock({ symbol: symbol });
+    }
 
+    // Si el usuario mandó like=true, intentamos guardar la IP
+    if (like === 'true') {
+      const anonymizedIp = anonymizeIP(ip);
+      // Solo agregamos la IP si no existe ya en el array
+      if (!stockDoc.likes.includes(anonymizedIp)) {
+        stockDoc.likes.push(anonymizedIp);
+        await stockDoc.save();
+      }
+    } else {
+      // Si no hay like, nos aseguramos de guardar el doc si era nuevo
+      await stockDoc.save(); 
+    }
+
+    return {
+      stock: symbol,
+      price: price,
+      likes: stockDoc.likes.length
+    };
+  }
+
+  // 2. LA RUTA PRINCIPAL
   app.route('/api/stock-prices')
     .get(async function (req, res) {
       const { stock, like } = req.query;
+      // req.ip a veces falla tras proxies, x-forwarded-for es más seguro en Replit/Glitch
       const ip = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
-      const isLike = like === 'true'; // Asegurar booleano
 
-      // CASO A: Dos acciones (Comparación)
-      if (Array.isArray(stock)) {
-        const symbol1 = stock[0].toUpperCase();
-        const symbol2 = stock[1].toUpperCase();
+      try {
+        // CASO A: COMPARAR DOS STOCKS (?stock=GOOG&stock=MSFT)
+        if (Array.isArray(stock)) {
+          // Procesamos ambos en paralelo
+          const [data1, data2] = await Promise.all([
+            processStock(stock[0], like, ip),
+            processStock(stock[1], like, ip)
+          ]);
 
-        const stockData1 = await getStockPrice(symbol1);
-        const stockData2 = await getStockPrice(symbol2);
-
-        if (!stockData1 || !stockData2) {
-            return res.json({ error: 'Stock not found' });
-        }
-
-        const likes1 = await handleLike(symbol1, isLike, ip);
-        const likes2 = await handleLike(symbol2, isLike, ip);
-
-        res.json({
-          stockData: [
-            {
-              stock: stockData1.symbol,
-              price: stockData1.price,
-              rel_likes: likes1 - likes2
+          // Calculamos la diferencia de likes (rel_likes)
+          const stockData = [
+            { 
+              stock: data1.stock, 
+              price: data1.price, 
+              rel_likes: data1.likes - data2.likes 
             },
-            {
-              stock: stockData2.symbol,
-              price: stockData2.price,
-              rel_likes: likes2 - likes1
+            { 
+              stock: data2.stock, 
+              price: data2.price, 
+              rel_likes: data2.likes - data1.likes 
             }
-          ]
-        });
+          ];
 
-      } 
-      // CASO B: Una sola acción
-      else {
-        const symbol = stock.toUpperCase();
-        const stockInfo = await getStockPrice(symbol);
+          return res.json({ stockData });
+        } 
         
-        if (!stockInfo) {
-            return res.json({ error: 'Stock not found' });
+        // CASO B: UN SOLO STOCK (?stock=GOOG)
+        else {
+          const data = await processStock(stock, like, ip);
+          return res.json({ stockData: data });
         }
 
-        const likesCount = await handleLike(symbol, isLike, ip);
-
-        res.json({
-          stockData: {
-            stock: stockInfo.symbol,
-            price: stockInfo.price,
-            likes: likesCount
-          }
-        });
+      } catch (err) {
+        console.error(err);
+        res.status(500).send('Error processing request');
       }
     });
     
