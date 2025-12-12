@@ -4,6 +4,7 @@ const express     = require('express');
 const bodyParser  = require('body-parser');
 const cors        = require('cors');
 const mongoose    = require('mongoose');
+const helmet      = require('helmet'); // <--- AQUI: Se importa AL PRINCIPIO
 
 const apiRoutes         = require('./routes/api.js');
 const fccTestingRoutes  = require('./routes/fcctesting.js');
@@ -11,37 +12,24 @@ const runner            = require('./test-runner');
 
 const app = express();
 
-const helmet = require('helmet');
+// 1. Configuración de Seguridad (Helmet) - Debe ir al principio de los middleware
+app.use(helmet.contentSecurityPolicy({
+  directives: {
+    defaultSrc: ["'self'"],
+    scriptSrc: ["'self'"],
+    styleSrc: ["'self'"],
+  }
+}));
 
-mongoose.connect(process.env.DB, { useNewUrlParser: true, useUnifiedTopology: true })
+mongoose.connect(process.env.DB)
   .then(() => console.log('Base de datos conectada exitosamente'))
   .catch((err) => console.log('Error de conexión a BD: ', err));
-// -------------------------------------------------------------
 
-// ... Configuración de Helmet (Seguridad) ...
-app.use(helmet.contentSecurityPolicy({
-  directives: {
-    defaultSrc: ["'self'"],
-    scriptSrc: ["'self'"],
-    styleSrc: ["'self'"],
-  }
-}));
-
+// 3. Archivos estáticos y CORS
 app.use('/public', express.static(process.cwd() + '/public'));
-
-
-// ... después de app.use('/public'...)
-
-app.use(helmet.contentSecurityPolicy({
-  directives: {
-    defaultSrc: ["'self'"],
-    scriptSrc: ["'self'"],
-    styleSrc: ["'self'"],
-  }
-}));
-
 app.use(cors({origin: '*'})); //For FCC testing purposes only
 
+// 4. Parsers
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
